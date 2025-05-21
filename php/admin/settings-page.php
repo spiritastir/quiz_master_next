@@ -90,6 +90,7 @@ class QMNGlobalSettingsPage {
 		add_settings_field( 'results-details', __( 'Template For Admin Results Details', 'quiz-master-next' ), array( $this, 'results_details_template' ), 'qmn_global_settings', 'qmn-global-section' );
 		add_settings_field( 'api-key-options', __( 'Enable APIs', 'quiz-master-next' ), array( $this, 'api_key_options' ), 'qmn_global_settings', 'qmn-global-section' );
 		add_settings_field( 'api-key', __( 'API Key', 'quiz-master-next' ), array( $this, 'api_key_field' ), 'qmn_global_settings', 'qmn-global-section' );
+		add_settings_field( 'openai-api-key', __( 'OpenAI API Key', 'quiz-master-next' ), array( $this, 'openai_api_key_field' ), 'qmn_global_settings', 'qmn-global-section' );
 	}
 
 	/**
@@ -239,6 +240,7 @@ class QMNGlobalSettingsPage {
 		add_settings_field( 'show-contact-form-to-logged-in-users', __( 'Show contact form to logged in users', 'quiz-master-next' ), array( $this, 'qsm_global_show_contact_form_to_logged_in_users' ), 'qsm_default_global_option_contact', 'qmn-global-section' );
 		add_settings_field( 'disable-auto-fill-for-contact-input', __( 'Disable auto fill for contact input', 'quiz-master-next' ), array( $this, 'qsm_global_disable_auto_fill_for_contact_input' ), 'qsm_default_global_option_contact', 'qmn-global-section' );
 		add_settings_field( 'disable-first-page', __( 'Disable first page on quiz', 'quiz-master-next' ), array( $this, 'qsm_global_disable_first_page' ), 'qsm_default_global_option_contact', 'qmn-global-section' );
+		add_settings_field( 'default-ai-guidance', __('Default AI Guidance','quiz-master-next'), array($this, 'qsm_global_default_ai_guidance'), 'qsm_default_global_option_general', 'qmn-global-section' );
 		global $globalQuizsetting;
 		$get_default_value = self::default_settings();
 		$get_saved_value   = get_option( 'qsm-quiz-settings' );
@@ -1435,6 +1437,35 @@ class QMNGlobalSettingsPage {
 		<?php
 	}
 	/* ====== Contact Tab End ==========*/
+
+	public function openai_api_key_field() {
+		$settings = (array) get_option( 'qmn-settings' );
+		$openai_api_key = isset( $settings['openai_api_key'] ) ? esc_attr( $settings['openai_api_key'] ) : '';
+		echo '<input type="text" name="qmn-settings[openai_api_key]" id="qmn-settings[openai_api_key]" value="' . $openai_api_key . '" style="min-width: 520px;" />';
+		echo '<p class="description">' . esc_html__( 'Enter your OpenAI API key to enable AI-powered quiz generation.', 'quiz-master-next' ) . '</p>';
+	}
+
+	public function qsm_global_default_ai_guidance() {
+		global $globalQuizsetting;
+		$default_ai_guidance = isset($globalQuizsetting['default_ai_guidance']) ? $globalQuizsetting['default_ai_guidance'] : "Generate [NUM_QUESTIONS] multiple choice questions for a quiz based on this description: \"[QUIZ_DESCRIPTION]\". Each question should have 3-5 answer options. For each option, provide an array: [\"Answer text\", points, 0], where points is an integer (e.g., 0, 1, 2, 3, 4) and 0 is a placeholder for is_correct.
+For each question, also generate a brief explanation or context (1-2 sentences) and include it as a 'description' field.
+Respond in JSON format as follows:
+[
+  {
+    \"question\": \"How often do you engage in physical activity?\",
+    \"description\": \"This question helps assess your weekly activity habits.\",
+    \"answers\": [
+      [\"Every day\", 3, 0],
+      [\"3-4 times a week\", 2, 0],
+      [\"1-2 times a week\", 1, 0],
+      [\"Rarely\", 0, 0]
+    ]
+  },
+  ...
+]";
+		echo '<textarea id="qsm-default-ai-guidance" name="qsm-quiz-settings[default_ai_guidance]" rows="17" style="min-width:520px;">'.esc_textarea($default_ai_guidance).'</textarea>';
+		echo '<p class="description">' . esc_html__( 'This is the default guidance for the AI to generate a quiz. You can override this for each quiz.', 'quiz-master-next' ) . '</p>';
+	}
 }
 
 $qmnGlobalSettingsPage = new QMNGlobalSettingsPage();

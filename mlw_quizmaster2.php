@@ -359,6 +359,7 @@ class MLWQuizMasterNext {
 		add_action( 'admin_init', array( $this, 'qsm_overide_old_setting_options' ) );
 		add_action( 'admin_notices', array( $this, 'qsm_admin_notices' ) );
 		add_filter( 'manage_edit-qsm_category_columns', array( $this, 'modify_qsm_category_columns' ) );
+		add_action( 'wp_ajax_qsm_generate_quiz_with_ai', 'qsm_generate_quiz_with_ai_handler' );
 	}
 
 	/**
@@ -1335,4 +1336,220 @@ function qsm_add_inline_tmpl( $handle, $id, $tmpl ) {
 		10,
 		3
 	);
+}
+
+// Helper function to generate questions with AI (OpenAI or other providers)
+function qsm_generate_questions_with_ai($ai_guidance) {
+	$endpoint = 'https://api.openai.com/v1/chat/completions';
+    $settings = get_option('qmn-settings', array());
+    $api_key = isset($settings['openai_api_key']) ? trim($settings['openai_api_key']) : '';
+    if (empty($api_key)) {
+        return array('success' => false, 'error' => 'No OpenAI API key set in plugin settings.');
+    }
+	
+	$data = [
+        'model' => 'gpt-3.5-turbo',
+        'messages' => [
+            ['role' => 'system', 'content' => 'You are a helpful quiz generator.'],
+            ['role' => 'user', 'content' => $ai_guidance]
+        ],
+        'max_tokens' => 1500,
+        'temperature' => 0.7,
+    ];
+    $response = wp_remote_post($endpoint, [
+        'headers' => [
+            'Content-Type' => 'application/json',
+            'Authorization' => 'Bearer ' . $api_key,
+        ],
+        'body' => json_encode($data),
+        'timeout' => 60,
+    ]);
+    if (is_wp_error($response)) {
+        return array('success' => false, 'error' => 'HTTP request error: ' . $response->get_error_message());
+    }
+    $body = wp_remote_retrieve_body($response);
+    $result = json_decode($body, true);
+    if (!isset($result['choices'][0]['message']['content'])) {
+        return array('success' => false, 'error' => 'OpenAI API did not return expected content. Raw response: ' . $body);
+    }
+    $json = $result['choices'][0]['message']['content'];
+    // Try to decode the JSON from the response
+    $questions = json_decode($json, true);
+    if (!is_array($questions)) {
+        return array('success' => false, 'error' => 'Failed to parse questions JSON. Raw content: ' . $json);
+    }
+    return array('success' => true, 'questions' => $questions);
+}
+
+function qsm_generate_quiz_with_ai_handler() {
+    // Check nonce
+    check_ajax_referer('qsm_installer_nonce', 'nonce');
+
+    // Check permissions
+    if (!current_user_can('create_qsm_quizzes')) {
+        wp_send_json_error(array('message' => 'Permission denied'));
+        wp_die();
+    }
+
+    // Get quiz details
+    $quiz_name = isset($_POST['quiz_name']) ? sanitize_text_field(wp_unslash($_POST['quiz_name'])) : '';
+    $quiz_description = isset($_POST['quiz_description']) ? sanitize_textarea_field(wp_unslash($_POST['quiz_description'])) : '';
+    $num_questions = isset($_POST['num_questions']) ? max(1, min(20, intval($_POST['num_questions']))) : 10;
+	$quiz_options = get_option('qsm-quiz-settings', array());
+	$default_ai_guidance = isset($quiz_options['default_ai_guidance']) ? $quiz_options['default_ai_guidance'] : '';
+	$ai_guidance = isset($_POST['ai_guidance']) ? trim(wp_unslash($_POST['ai_guidance'])) : $default_ai_guidance;
+	$ai_guidance = str_replace('[QUIZ_DESCRIPTION]', $quiz_description, $ai_guidance);
+	$ai_guidance = str_replace('[NUM_QUESTIONS]', $num_questions, $ai_guidance);
+
+    if (empty($quiz_name) || empty($quiz_description)) {
+        wp_send_json_error(array('message' => 'Quiz name and description are required'));
+        wp_die();
+    }
+
+    // Generate questions with AI
+    $ai_result = qsm_generate_questions_with_ai($ai_guidance);
+    if (!$ai_result['success'] || !isset($ai_result['questions']) || !is_array($ai_result['questions'])) {
+        $error_message = isset($ai_result['error']) ? $ai_result['error'] : 'Failed to generate questions with AI. Please try again.';
+        wp_send_json_error(array('message' => $error_message));
+        wp_die();
+    }
+    $questions = $ai_result['questions'];
+
+    global $wpdb;
+
+    // Check if a quiz with this name already exists
+    $existing_quiz = $wpdb->get_var($wpdb->prepare(
+        "SELECT quiz_id FROM {$wpdb->prefix}mlw_quizzes WHERE quiz_name = %s AND deleted = 0",
+        $quiz_name
+    ));
+
+    if ($existing_quiz) {
+        wp_send_json_error(array('message' => 'A quiz with this name already exists'));
+        wp_die();
+    }
+
+    // First create the WordPress post
+    $quiz_post = array(
+        'post_title'   => $quiz_name,
+        'post_content' => $quiz_description,
+        'post_status'  => 'publish',
+        'post_type'    => 'qsm_quiz'
+    );
+
+    $quiz_post_id = wp_insert_post($quiz_post);
+
+    if (is_wp_error($quiz_post_id)) {
+        wp_send_json_error(array('message' => 'Failed to create quiz post'));
+        wp_die();
+    }
+
+    // Create the quiz in the plugin's table with all required fields
+    $quiz_data = array(
+		'quiz_name' => $quiz_name,
+        'quiz_system' => 1, // 1 represents points-based quiz system
+        'theme_selected' => 'default',
+        'submit_button_text' => 'Submit',
+        'last_activity' => current_time('mysql'),
+        'quiz_author_id' => get_current_user_id()
+    );
+
+    $result = $wpdb->insert($wpdb->prefix . 'mlw_quizzes', $quiz_data);
+    
+    if ($result === false) {
+        // If quiz creation fails, delete the post
+        wp_delete_post($quiz_post_id, true);
+        error_log('QSM Quiz Creation Error: ' . $wpdb->last_error);
+        wp_send_json_error(array(
+            'message' => 'Failed to create quiz in database',
+            'error' => $wpdb->last_error
+        ));
+        wp_die();
+    }
+    
+    $quiz_id = $wpdb->insert_id;
+
+    if (!$quiz_id) {
+        // If no quiz ID, delete the post
+        wp_delete_post($quiz_post_id, true);
+        error_log('QSM Quiz Creation Error: No quiz ID returned after insertion');
+        wp_send_json_error(array('message' => 'Failed to create quiz in database - no ID returned'));
+        wp_die();
+    }
+
+    // Check if this quiz_id already exists in post meta for any post
+    $existing_post = $wpdb->get_var($wpdb->prepare(
+        "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = 'quiz_id' AND meta_value = %d",
+        $quiz_id
+    ));
+
+    if ($existing_post) {
+        // If quiz_id already exists in post meta, delete both the new post and the quiz
+        wp_delete_post($quiz_post_id, true);
+        $wpdb->delete($wpdb->prefix . 'mlw_quizzes', array('quiz_id' => $quiz_id));
+        error_log('QSM Quiz Creation Error: Quiz ID already exists in post meta');
+        wp_send_json_error(array('message' => 'Failed to create quiz - ID conflict detected'));
+        wp_die();
+    }
+
+    // Store quiz ID in post meta
+    update_post_meta($quiz_post_id, 'quiz_id', $quiz_id);
+
+    // Insert generated questions
+	$log = [];
+    $order = 1;
+    foreach ($questions as $q) {
+        if (!isset($q['question']) || !isset($q['description']) || !isset($q['answers']) || !is_array($q['answers'])) {
+			error_log('QSM Quiz Generation Error: Missing required fields for question: ' . print_r($q, true));
+			continue;
+		}
+
+        if (count($q['answers']) < 2) {
+			error_log('QSM Quiz Generation Error: Not enough answer options for question: ' . print_r($q, true));
+			continue;
+		}
+
+        $question_data = array(
+            'quiz_id' => $quiz_id,
+            'question_name' => $q['question'],
+            'answer_array' => serialize($q['answers']), // Required for backward compatibility
+            'question_answer_info' => '',
+            'comments' => 1,
+            'question_order' => $order,
+            'question_type' => 0,
+            'question_type_new' => 0,
+            'question_settings' => serialize(array(
+                'question_title' => $q['question'],
+                'question_type' => 0,
+                'question_description' => $q['description'],
+                'answers' => $q['answers']
+            ))
+        );
+        $wpdb->insert($wpdb->prefix . 'mlw_questions', $question_data);
+
+		$log[] = array(
+            'quiz_id' => $quiz_id,
+            'question_name' => $q['question'],
+            'answer_array' => $q['answers'], // Skip serialization for log
+            'question_answer_info' => '',
+            'comments' => 1,
+            'question_order' => $order,
+            'question_type' => 0,
+            'question_type_new' => 0,
+            'question_settings' => array( // Skip serialization for log
+                'question_title' => $q['question'],
+                'question_type' => 0,
+                'question_description' => $q['description'],
+                'answers' => $q['answers']
+            )
+        );
+        $order++;
+    }
+
+    // Redirect to quiz edit page
+    $redirect_url = admin_url('admin.php?page=mlw_quiz_options&quiz_id=' . $quiz_id);
+    wp_send_json_success(array(
+        'redirect_url' => $redirect_url,
+        'log' => $log,
+    ));
+    wp_die();
 }

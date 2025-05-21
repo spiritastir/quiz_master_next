@@ -351,6 +351,83 @@ jQuery(function ($) {
             $(this).hide();
             $('.qsm-quiz-addon-steps-grid').children('.qsm-quiz-addon-steps-card').show();
         });
-    });
 
+        // Helper to disable/enable nav buttons
+        function setNavButtonsDisabled(disabled) {
+            var $navBtns = $('.qsm-dashboard-journy-next-step, .qsm-dashboard-journy-next-step-proceed, .qsm-dashboard-journy-previous-step');
+            if (disabled) {
+                $navBtns.addClass('is-disabled').attr('aria-disabled', 'true').attr('tabindex', '-1');
+            } else {
+                $navBtns.removeClass('is-disabled').removeAttr('aria-disabled').removeAttr('tabindex');
+            }
+        }
+
+        // Handle AI quiz generation
+        function handleAIQuizGeneration(e) {
+            e.preventDefault();
+            const quizName = $('.quiz_name').val();
+            const quizDescription = $('.quiz_description').val();
+            const numQuestions = $('.num_questions').val() || 10;
+            const aiGuidance = $('.ai_guidance').val();
+            // Remove any previous error
+            $('.qsm-ai-quiz-error').remove();
+            // Remove any previous spinner
+            $('.qsm-ai-spinner').remove();
+            if (!quizName || !quizDescription) {
+                $('<div class="qsm-ai-quiz-error notice notice-error"><p>Please fill in all required fields</p></div>').insertBefore('.qsm-ai-generate-button');
+                return;
+            }
+            // Show loading state
+            const $button = $(this);
+            const originalText = $button.text();
+            $button.prop('disabled', true).text('Generating...');
+            // Disable Prev/Next/Proceed buttons
+            setNavButtonsDisabled(true);
+            // Show WP spinner
+            var $spinner = $('<span class="spinner is-active qsm-ai-spinner" style="margin-left:10px;vertical-align:middle;"></span>');
+            $button.after($spinner);
+            // Make AJAX call to generate quiz
+            $.ajax({
+                url: qsm_admin_new_quiz.ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'qsm_generate_quiz_with_ai',
+                    nonce: qsm_admin_new_quiz.nonce,
+                    quiz_name: quizName,
+                    quiz_description: quizDescription,
+                    num_questions: numQuestions,
+                    ai_guidance: aiGuidance
+                },
+                success: function(response) {
+                    if (response.data && response.data.log) {
+                        console.log('AI QUESTIONS DATA:', JSON.stringify(response.data.log));
+                    }
+                    $button.prop('disabled', false).text(originalText);
+                    // Re-enable Prev/Next/Proceed buttons
+                    setNavButtonsDisabled(false);
+                    // Remove spinner
+                    $('.qsm-ai-spinner').remove();
+                    if (response.success && response.data && response.data.redirect_url) {
+                        window.location.href = response.data.redirect_url;
+                    } else {
+                        const msg = response.data && response.data.message ? response.data.message : 'Unknown error occurred.';
+                        $('<div class="qsm-ai-quiz-error notice notice-error"><p>' + msg + '</p></div>').insertBefore('.qsm-ai-generate-button');
+                    }
+                },
+                error: function(xhr, status, error) {
+                    $button.prop('disabled', false).text(originalText);
+                    // Re-enable Prev/Next/Proceed buttons
+                    setNavButtonsDisabled(false);
+                    // Remove spinner
+                    $('.qsm-ai-spinner').remove();
+                    let msg = 'AJAX error: ' + (xhr.responseText || status || error);
+                    $('<div class="qsm-ai-quiz-error notice notice-error"><p>' + msg + '</p></div>').insertBefore('.qsm-ai-generate-button');
+                }
+            });
+        }
+        if (qsm_admin_new_quiz.is_ai_mode) {
+            $('#generate-quiz-with-ai').on('click', handleAIQuizGeneration);
+            $('.qsm-dashboard-journy-next-step-proceed').on('click', handleAIQuizGeneration);
+        }
+    });
 });

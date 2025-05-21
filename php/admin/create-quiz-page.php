@@ -398,6 +398,10 @@ function qsm_create_quiz_page_callback() {
 			}
 		}
 	}
+
+	// Check if we're in AI mode
+	$is_ai_mode = isset($_GET['ai']) && $_GET['ai'] == 'true';
+
 	wp_localize_script( 'qsm-create-quiz-script', 'qsm_admin_new_quiz', array(
 		'quizoptions'         => $quizoptions_boxes,
 		'installed'           => $installed_plugins,
@@ -416,6 +420,7 @@ function qsm_create_quiz_page_callback() {
 		'retry'               => __('Retry', 'quiz-master-next'),
 		'more_settings'       => __('Additional Form Settings', 'quiz-master-next'),
 		'less_settings'       => __('Hide Additional Settings', 'quiz-master-next'),
+		'is_ai_mode'          => $is_ai_mode,
 	) );
 
 	qsm_display_header_section_links();
@@ -434,7 +439,50 @@ function qsm_create_quiz_page_callback() {
 				<form action="" method="post" id="new-quiz-form">
 					<div class="qsm-form-inside-container" id="qsm-add-installer">
 						<?php wp_nonce_field( 'qsm_new_quiz', 'qsm_new_quiz_nonce' );
-						if ( $qsm_admin_dd ) {
+						if ( $is_ai_mode ) {
+							// Show AI interface
+							?>
+							<div class="qsm-ai-quiz-generator">
+								<div class="qsm-dashboard-page-header">
+									<h3><?php echo esc_html__('Generate Quiz with AI', 'quiz-master-next'); ?></h3>
+									<p><?php echo esc_html__('Let AI help you create a quiz by describing what you want', 'quiz-master-next'); ?></p>
+								</div>
+								<div class="input-group">
+									<label for="quiz_name" class="qsm-dashboard-quiz-name-label"><?php esc_html_e( 'Quiz Name', 'quiz-master-next' ); ?>
+										<span style="color:red">*</span>
+									</label>
+									<input type="text" class="quiz_name" name="quiz_name" value="" required="" placeholder="<?php esc_html_e( 'Enter a name for this Quiz.', 'quiz-master-next' ); ?>">
+								</div>
+								<div class="input-group">
+									<label for="quiz_description" class="qsm-dashboard-quiz-name-label"><?php esc_html_e( 'Quiz Description', 'quiz-master-next' ); ?>
+										<span style="color:red">*</span>
+									</label>
+									<textarea class="quiz_description" name="quiz_description" required="" placeholder="<?php esc_html_e( 'Describe what kind of quiz you want to create. For example: "Create a quiz about World War 2 with 10 multiple choice questions"', 'quiz-master-next' ); ?>" rows="4"></textarea>
+								</div>
+								<div class="input-group">
+									<label for="num_questions" class="qsm-dashboard-quiz-name-label">
+										<?php esc_html_e( 'Number of Questions', 'quiz-master-next' ); ?>
+										<span style="color:red">*</span>
+									</label>
+									<input type="number" class="num_questions" name="num_questions" min="1" max="20" value="10" required>
+								</div>
+								<div class="input-group">
+									<label for="ai_guidance" class="qsm-dashboard-quiz-guidance-label">
+										<?php esc_html_e( 'AI Generation Guidance', 'quiz-master-next' ); ?>
+										<span style="color:gray">(You can edit this prompt for custom behavior)</span>
+									</label>
+									<?php
+									$quiz_options = get_option('qsm-quiz-settings', array());
+									$default_ai_guidance = isset($quiz_options['default_ai_guidance']) ? $quiz_options['default_ai_guidance'] : '';
+									?>
+									<textarea class="ai_guidance" name="ai_guidance" rows="15" style="min-height:270px;"><?php echo esc_textarea($default_ai_guidance); ?></textarea>
+								</div>
+								<div class="qsm-dashboard-page-footer">
+									<button type="button" class="qsm-dashboard-journy-generate button-primary" id="generate-quiz-with-ai"><?php esc_html_e( 'Generate Quiz', 'quiz-master-next' ); ?></button>
+								</div>
+							</div>
+							<?php
+						} else if ( $qsm_admin_dd ) {
 							$all_addons = $qsm_admin_dd['all_addons'];
 							$all_themes = $qsm_admin_dd['themes'];
 
@@ -489,5 +537,4 @@ function qsm_create_quiz_page_callback() {
 		</div><!-- qsm-new-quiz-wrapper -->
 	</div>
 	<?php
-
 }

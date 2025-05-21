@@ -102,7 +102,8 @@ a.qsm-dashboard-journy-next-step-proceed .qsm-dashboard-help-image {
     width: 18px;
 }
 
-a.qsm-dashboard-journy-next-step-proceed.button-primary {
+a.qsm-dashboard-journy-next-step-proceed.button-primary,
+.qsm-dashboard-journy-generate.button-primary {
     font-size: 15px;
     height: 38px;
     width: 116px;
@@ -656,4 +657,39 @@ span.qsm-create-quiz-toggle-label {
 }
 .qsm-dashboard-addon-switch.qsm-create-quiz-no-activated-tooltip {
     pointer-events: none;
+}
+
+.qsm-ai-quiz-generator {
+    max-width: 800px;
+    margin: 20px auto;
+}
+
+.qsm-ai-quiz-generator .qsm-dashboard-page-header {
+    margin-bottom: 30px;
+}
+
+.qsm-ai-quiz-generator .input-group {
+    margin-bottom: 20px;
+}
+
+.qsm-ai-quiz-generator .input-group label {
+    display: block;
+    margin-bottom: 8px;
+}
+
+.qsm-ai-quiz-generator .input-group input[type="text"],
+.qsm-ai-quiz-generator .input-group textarea {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.qsm-ai-quiz-generator .input-group textarea {
+    min-height: 100px;
+}
+
+.qsm-ai-quiz-generator .qsm-dashboard-page-footer {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-top: 30px;
 }
