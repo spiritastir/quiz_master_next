@@ -360,6 +360,7 @@ class MLWQuizMasterNext {
 		add_action( 'admin_notices', array( $this, 'qsm_admin_notices' ) );
 		add_filter( 'manage_edit-qsm_category_columns', array( $this, 'modify_qsm_category_columns' ) );
 		add_action( 'wp_ajax_qsm_generate_quiz_with_ai', 'qsm_generate_quiz_with_ai_handler' );
+		add_action( 'wp_ajax_qsm_generate_results_with_ai', 'qsm_generate_results_with_ai_handler' );
 	}
 
 	/**
@@ -1446,7 +1447,7 @@ function qsm_generate_quiz_with_ai_handler() {
     // Create the quiz in the plugin's table with all required fields
     $quiz_data = array(
 		'quiz_name' => $quiz_name,
-        'quiz_system' => 1, // 1 represents points-based quiz system
+        'quiz_system' => 1, // Points
         'theme_selected' => 'default',
         'submit_button_text' => 'Submit',
         'last_activity' => current_time('mysql'),
@@ -1545,11 +1546,220 @@ function qsm_generate_quiz_with_ai_handler() {
         $order++;
     }
 
+    $question_ids = $wpdb->get_col($wpdb->prepare(
+        "SELECT question_id FROM {$wpdb->prefix}mlw_questions WHERE quiz_id = %d ORDER BY question_order ASC",
+        $quiz_id
+    ));
+    // Create a single page with all questions
+    $pages = array($question_ids);
+    $qpages = array(array(
+        'id' => 1,
+        'quizID' => $quiz_id,
+        'pagekey' => uniqid(),
+        'hide_prevbtn' => 0,
+        'questions' => $question_ids,
+    ));
+    global $mlwQuizMasterNext;
+    $mlwQuizMasterNext->quiz_settings->prepare_quiz($quiz_id);
+    $mlwQuizMasterNext->pluginHelper->update_quiz_setting('pages', $pages);
+    $mlwQuizMasterNext->pluginHelper->update_quiz_setting('qpages', $qpages);
+	
+    // Save the raw questions JSON for later AI use
+    $mlwQuizMasterNext->pluginHelper->update_quiz_setting('ai_questions_json', json_encode($questions));
+
+    // Set form_type to Survey and system to Points in quiz settings
+    global $mlwQuizMasterNext;
+    $mlwQuizMasterNext->quiz_settings->prepare_quiz($quiz_id);
+    $quiz_settings = $mlwQuizMasterNext->pluginHelper->get_quiz_setting('quiz_options');
+    $quiz_settings['form_type'] = 1; // Survey
+    $quiz_settings['system'] = 1; // Points
+    $quiz_settings['enable_quick_correct_answer_info'] = 0; // Never Display correct answer info
+    $quiz_settings['enable_quick_result_mc'] = 0; // Disable real-time results per question
+    $mlwQuizMasterNext->pluginHelper->update_quiz_setting('quiz_options', $quiz_settings);
+
     // Redirect to quiz edit page
     $redirect_url = admin_url('admin.php?page=mlw_quiz_options&quiz_id=' . $quiz_id);
     wp_send_json_success(array(
         'redirect_url' => $redirect_url,
         'log' => $log,
+    ));
+    wp_die();
+}
+
+function qsm_generate_results_with_ai_handler() {
+    // Check nonce
+    check_ajax_referer('wp_rest', 'nonce');
+
+    // Check permissions
+    if (!current_user_can('create_qsm_quizzes')) {
+        wp_send_json_error(array('message' => 'Permission denied'));
+        wp_die();
+    }
+
+	$endpoint = 'https://api.openai.com/v1/chat/completions';
+	
+    $settings = get_option('qmn-settings', array());
+    $api_key = isset($settings['openai_api_key']) ? trim($settings['openai_api_key']) : '';
+    if (empty($api_key)) {
+        wp_send_json_error(array('message' => 'No OpenAI API key set in plugin settings.'));
+        wp_die();
+    }
+
+    $quiz_id = isset($_POST['quiz_id']) ? intval($_POST['quiz_id']) : 0;
+    if (!$quiz_id) {
+        wp_send_json_error(array('message' => 'Invalid quiz ID'));
+        wp_die();
+    }
+
+    global $mlwQuizMasterNext;
+    $mlwQuizMasterNext->quiz_settings->prepare_quiz($quiz_id);
+    
+    // Get previously generated questions for context
+    $questions_json = $mlwQuizMasterNext->pluginHelper->get_quiz_setting('ai_questions_json', '');
+    if (empty($questions_json)) {
+        wp_send_json_error(array('message' => 'No questions JSON found for this quiz.'));
+        wp_die();
+    }
+
+    // Get quiz data for context
+    global $wpdb;
+    $quiz_data = $wpdb->get_row($wpdb->prepare(
+        "SELECT quiz_name, quiz_settings FROM {$wpdb->prefix}mlw_quizzes WHERE quiz_id = %d",
+        $quiz_id
+    ));
+
+    if (!$quiz_data) {
+        wp_send_json_error(array('message' => 'Quiz not found'));
+        wp_die();
+    }
+
+    // Get quiz settings
+    $quiz_settings = maybe_unserialize($quiz_data->quiz_settings);
+    $total_points = isset($quiz_settings['total_points']) ? intval($quiz_settings['total_points']) : 0;
+
+    // Load AI results guidance from plugin settings, with a default fallback
+    $quiz_options = get_option('qsm-quiz-settings', array());
+    $ai_results_guidance = isset($quiz_options['ai_results_guidance']) ? $quiz_options['ai_results_guidance'] : '';
+    $ai_guidance = str_replace('[QUESTIONS_JSON]', $questions_json, $ai_results_guidance);
+    $ai_guidance = str_replace('[QUIZ_NAME]', $quiz_data->quiz_name, $ai_guidance);
+    $ai_guidance = str_replace('[TOTAL_POINTS]', $total_points, $ai_guidance);
+    $data = [
+        'model' => 'gpt-3.5-turbo',
+        'messages' => [
+            ['role' => 'system', 'content' => 'You are a helpful assistant that generates quiz result messages.'],
+            ['role' => 'user', 'content' => $ai_guidance]
+        ],
+        'max_tokens' => 1500,
+        'temperature' => 0.7,
+    ];
+    $response = wp_remote_post($endpoint, array(
+        'headers' => array(
+            'Content-Type' => 'application/json',
+            'Authorization' => 'Bearer ' . $api_key,
+        ),
+        'body' => json_encode($data),
+        'timeout' => 60,
+    ));
+    if (is_wp_error($response)) {
+        wp_send_json_error(array('message' => 'Failed to connect to OpenAI: ' . $response->get_error_message()));
+        wp_die();
+    }
+    $body = wp_remote_retrieve_body($response);
+    $result = json_decode($body, true);
+    if (!isset($result['choices'][0]['message']['content'])) {
+        wp_send_json_error(array(
+            'message' => 'Invalid response from OpenAI',
+            'debug' => array(
+                'body' => $body,
+                'result' => $result
+            )
+        ));
+        wp_die();
+    }
+
+    // Parse AI response
+    $raw_response = $result['choices'][0]['message']['content'];
+
+    // Remove code block markers
+    $clean_response = preg_replace('/^```json\\s*|```$/m', '', $raw_response);
+
+    // Try to extract the first JSON array or object from the response
+    if (preg_match('/(\\[.*\\]|\\{.*\\})/s', $clean_response, $matches)) {
+        $json_candidate = $matches[1];
+    } else {
+        $json_candidate = $clean_response;
+    }
+
+    $results = json_decode($json_candidate, true);
+    if (!is_array($results)) {
+        wp_send_json_error(array(
+            'message' => 'Invalid JSON from AI response',
+            'debug' => array(
+                'raw_response' => $raw_response,
+                'clean_response' => $clean_response,
+                'json_candidate' => $json_candidate,
+                'json_error' => json_last_error_msg()
+            )
+        ));
+        wp_die();
+    }
+
+    // Save results to database
+    $results_array = array();
+    foreach ($results as $result) {
+        if (!isset($result['min_score']) || !isset($result['max_score']) || !isset($result['message'])) {
+            continue;
+        }
+        $results_array[] = array(
+            'id' => uniqid(),
+            'conditions' => array(
+                array(
+                    'category' => 'quiz',
+                    'extra_condition' => '',
+                    'criteria' => 'points',
+                    'operator' => 'greater-equal',
+                    'value' => strval($result['min_score']),
+                ),
+                array(
+                    'category' => 'quiz',
+                    'extra_condition' => '',
+                    'criteria' => 'points',
+                    'operator' => 'less-equal',
+                    'value' => strval($result['max_score']),
+                ),
+            ),
+            'page' => sanitize_textarea_field($result['message']),
+            'redirect' => false,
+            'default_mark' => false,
+            'is_updated' => 1,
+        );
+    }
+    $quiz_settings['results_pages'] = $results_array;
+
+    // Update quiz settings (optional, for reference)
+    $wpdb->update(
+        $wpdb->prefix . 'mlw_quizzes',
+        array('quiz_settings' => maybe_serialize($quiz_settings)),
+        array('quiz_id' => $quiz_id),
+        array('%s'),
+        array('%d')
+    );
+
+    // Update message_after so the UI can load the new results pages
+    $wpdb->update(
+        $wpdb->prefix . 'mlw_quizzes',
+        array('message_after' => maybe_serialize($results_array)),
+        array('quiz_id' => $quiz_id),
+        array('%s'),
+        array('%d')
+    );
+
+    wp_send_json_success(array(
+        'message' => 'Results pages generated successfully',
+        'raw_response' => $raw_response,
+		'clean_response' => $clean_response,
+		'json_candidate' => $json_candidate,
+        'results' => $results_array,
     ));
     wp_die();
 }

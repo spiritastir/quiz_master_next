@@ -242,6 +242,7 @@ class QMNGlobalSettingsPage {
 		add_settings_field( 'disable-auto-fill-for-contact-input', __( 'Disable auto fill for contact input', 'quiz-master-next' ), array( $this, 'qsm_global_disable_auto_fill_for_contact_input' ), 'qsm_default_global_option_contact', 'qmn-global-section' );
 		add_settings_field( 'disable-first-page', __( 'Disable first page on quiz', 'quiz-master-next' ), array( $this, 'qsm_global_disable_first_page' ), 'qsm_default_global_option_contact', 'qmn-global-section' );
 		add_settings_field( 'default-ai-guidance', __('Default AI Guidance','quiz-master-next'), array($this, 'qsm_global_default_ai_guidance'), 'qsm_default_global_option_general', 'qmn-global-section' );
+		add_settings_field( 'ai-results-guidance', __('AI Results Guidance','quiz-master-next'), array($this, 'qsm_global_ai_results_guidance'), 'qsm_default_global_option_general', 'qmn-global-section' );
 		global $globalQuizsetting;
 		$get_default_value = self::default_settings();
 		$get_saved_value   = get_option( 'qsm-quiz-settings' );
@@ -1466,6 +1467,25 @@ Respond in JSON format as follows:
 ]";
 		echo '<textarea id="qsm-default-ai-guidance" name="qsm-quiz-settings[default_ai_guidance]" rows="17" style="min-width:520px;">'.esc_textarea($default_ai_guidance).'</textarea>';
 		echo '<p class="description">' . esc_html__( 'This is the default guidance for the AI to generate a quiz. You can override this for each quiz.', 'quiz-master-next' ) . '</p>';
+	}
+
+	public function qsm_global_ai_results_guidance() {
+		global $globalQuizsetting;
+		$default_ai_results_guidance = isset($globalQuizsetting['ai_results_guidance']) ? $globalQuizsetting['ai_results_guidance'] : "Here is the quiz structure in JSON: [QUESTIONS_JSON]
+Based on the questions and possible answers, generate 3-5 conditional result messages for the user, based on their total points scored.
+The quiz is titled '[QUIZ_NAME]' and has a total of [TOTAL_POINTS] points.
+Create messages for different score ranges that are encouraging and motivational. Format the response as a JSON array of objects, each with 'min_score', 'max_score', and 'message' fields.
+Example format:
+[
+  {
+	\"min_score\": 0,
+	\"max_score\": 30,
+	\"message\": \"Keep practicing!\"
+  },
+  ...
+]";
+		echo '<textarea id="qsm-ai-results-guidance" name="qsm-quiz-settings[ai_results_guidance]" rows="17" style="min-width:520px;">'.esc_textarea($default_ai_results_guidance).'</textarea>';
+		echo '<p class="description">' . esc_html__( 'This is the guidance for the AI to generate result messages.', 'quiz-master-next' ) . '</p>';
 	}
 }
 

@@ -4937,6 +4937,51 @@ var QSM_Quiz_Broadcast_Channel;
                     jQuery('html, body').animate({ scrollTop: jQuery('.results-page:last-child').offset().top - 150 }, 1000);
                     QSMAdminResults.updateResultConditonCount(jQuery('.results-page-when').last());
                 });
+                $('.qsm-generate-results-ai').on('click', function (e) {
+                  e.preventDefault();
+                  var $btn = jQuery(this);
+                  $btn.prop("disabled", true).text("Generating...");
+                  QSMAdmin.displayAlert(
+                    "Generating results pages with AI...",
+                    "info"
+                  );
+                  jQuery.ajax({
+                    url: ajaxurl,
+                    method: "POST",
+                    data: {
+                      action: "qsm_generate_results_with_ai",
+                      nonce: qsmResultsObject.nonce,
+                      quiz_id: qsmResultsObject.quizID,
+                    },
+                    success: function (response) {
+                      $btn.prop("disabled", false).text("Generate with AI");
+                      console.log("AI Response:", response);
+                      if (response.success) {
+                        QSMAdmin.displayAlert(
+                          "AI-generated results pages created! Please review and save.",
+                          "success"
+                        );
+                        $('#results-pages').empty();
+                        QSMAdminResults.loadResults();
+                      } else {
+                        console.error("AI Generation Error:", response.data);
+                        QSMAdmin.displayAlert(
+                          response.data && response.data.message
+                            ? response.data.message
+                            : "AI generation failed.",
+                          "error"
+                        );
+                      }
+                    },
+                    error: function (xhr) {
+                      $btn.prop("disabled", false).text("Generate with AI");
+                      QSMAdmin.displayAlert(
+                        "AI generation failed: " + xhr.statusText,
+                        "error"
+                      );
+                    },
+                  });
+                });
                 $('.save-pages').on('click', function (event) {
                     event.preventDefault();
                     QSMAdminResults.saveResults();

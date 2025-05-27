@@ -60,6 +60,7 @@ function qsm_options_results_tab_content() {
 		<div style="margin-bottom: 30px;margin-top: 35px;" class="qsm-spinner-loader"></div>
 	</div>
 	<button class="add-new-page button"><?php esc_html_e( 'Add New Results Page', 'quiz-master-next' ); ?></button>
+	<button class="button qsm-generate-results-ai" style="margin-left: 10px;"><?php esc_html_e( 'Generate with AI', 'quiz-master-next' ); ?></button>
 	<div class="option-page-result-page-tab-footer">
 		<div id="footer-bar-notice" class="footer-bar-notice"></div>
 		<div class="result-tab-footer-buttons">
