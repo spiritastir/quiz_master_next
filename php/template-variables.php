@@ -1143,7 +1143,8 @@ function qsm_questions_answers_shortcode_to_text( $mlw_quiz_array, $qmn_question
 		$form_type   = isset( $mlw_quiz_array['form_type'] ) ? $mlw_quiz_array['form_type'] : 0;
 		$quiz_system = isset( $mlw_quiz_array['quiz_system'] ) ? $mlw_quiz_array['quiz_system'] : 0;
 		if ( isset( $answer['id'] ) && isset( $questions[ $answer['id'] ] ) && ! empty( $questions[ $answer['id'] ] ) ) {
-			$total_answers             = isset( $questions[ $answer['id'] ]['answers'] ) ? $questions[ $answer['id'] ]['answers'] : array();
+			$total_answers = isset( $questions[ $answer['id'] ]['answers'] ) ? $questions[ $answer['id'] ]['answers'] : array();
+			$total_answers = ! empty( $answer['answer_limit_keys'] ) ? $mlwQuizMasterNext->pluginHelper->qsm_get_limited_options_by_keys( $total_answers, $answer['answer_limit_keys'] ) : $total_answers;
 			if ( ! empty( $_POST['quiz_answer_random_ids'] ) ) {
 				$answers_random = array();
 				$quiz_answer_random_ids = sanitize_text_field( wp_unslash( $_POST['quiz_answer_random_ids'] ) );
@@ -1362,6 +1363,7 @@ function qsm_questions_answers_shortcode_to_text( $mlw_quiz_array, $qmn_question
 		$mlw_question_answer_display = str_replace( '%USER_ANSWER%', do_shortcode( $question_with_answer_text ), $mlw_question_answer_display );
 	}
 	$close_span_with_br = '</span><br/>';
+	$close_span_with_br = apply_filters('qsm_close_span_with_br', $close_span_with_br, $answer['question_type']);
 	if ( isset( $answer['question_type'] ) && 11 == $answer['question_type'] ) {
 		$file_extension = substr( $answer[1], -4 );
 		if ( '.jpg' === $file_extension || '.jpeg' === $file_extension || '.png' === $file_extension || '.gif' === $file_extension ) {

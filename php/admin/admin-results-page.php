@@ -106,6 +106,11 @@ function qsm_delete_results_attachments( $rows_before_update ) {
     }
 }
 function qsm_results_overview_tab_content() {
+	$get_subtabs = apply_filters( 'qsm_ultimate_get_subtabs_options', array() );
+	$current_subtab = isset( $_GET['subtab'] ) ? sanitize_key( $_GET['subtab'] ) : '';
+	do_action('qsm_before_admin_show_results_list', $get_subtabs, $current_subtab);
+
+	if ( empty( $get_subtabs ) || '' === $current_subtab ) {
 
 	global $wpdb;
 	global $mlwQuizMasterNext;
@@ -566,13 +571,14 @@ function qsm_results_overview_tab_content() {
 								<span style="font-size: 16px;"><?php echo esc_html( $quiz_infos[ $x ]->quiz_name ); ?></span>
 								<div class="row-actions">
 									<span style="color: green; font-size: 16px;">
-									<?php
+									<?php do_action('qsm_admin_quiz_results_page_rowactions_before', $quiz_infos[ $x ]);
 									if ( ( current_user_can( 'view_qsm_quiz_result' ) && get_current_user_id() == $quiz_infos[ $x ]->user ) || current_user_can( 'delete_others_qsm_quizzes' ) ) {
 									?>
 										<a href="admin.php?page=qsm_quiz_result_details&result_id=<?php echo esc_attr( $quiz_infos[ $x ]->result_id ); ?>"><?php esc_html_e( 'View Results', 'quiz-master-next' ); ?></a> |
 									<?php } ?>
 										<a style="color: red;" class="delete_table_quiz_results_item" data-quiz-id="<?php echo esc_attr( $quiz_infos[ $x ]->result_id ); ?>" data-quiz-name="<?php echo esc_attr( $quiz_infos[ $x ]->quiz_name ); ?>" href='#'><?php esc_html_e( 'Delete', 'quiz-master-next' ); ?></a> |
 										<a class="<?php echo esc_attr( $quiz_infos[ $x ]->proctor_report_class ); ?>" href='<?php echo esc_attr( $quiz_infos[ $x ]->proctor_report_link ); ?>'><?php esc_html_e( 'Proctor Reports', 'quiz-master-next' ); ?></a>
+									<?php do_action('qsm_admin_quiz_results_page_rowactions_after', $quiz_infos[ $x ]); ?>
 									</span>
 								</div>
 							</td>
@@ -691,6 +697,8 @@ function qsm_results_overview_tab_content() {
 		);
 		qsm_admin_upgrade_popup($qsm_pop_up_arguments);
 	}
+	}
+	do_action('qsm_ultimate_display_actiivity_report_section');
 }
 
 function qsm_export_results_tabs_content() {
